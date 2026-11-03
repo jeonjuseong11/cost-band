@@ -13,6 +13,6 @@ export type Cost = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'cost-band': { cost: Cost | null; isOpen: boolean; flow: Flow }
+    'cost-band': { cost: Cost | null; isOpen: boolean; flow: Flow; evalMenu: boolean }
   }
 }

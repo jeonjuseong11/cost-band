@@ -5,6 +5,7 @@ import type { Cost, Flow } from '../types'
 
 const cost = atom({ plugin: 'cost-band', key: 'cost' } as const, null)
 const flow = atom({ plugin: 'cost-band', key: 'flow' } as const, { step: 'idle' } as Flow)
+const evalMenu = atom({ plugin: 'cost-band', key: 'evalMenu' } as const, false)
 const isOpen = atom({ plugin: 'cost-band', key: 'isOpen' } as const, false)
 
 const FILE = '~/.claude/handoffs/latest.md'
@@ -32,27 +33,55 @@ const elapsed = (ms: number) => {
 const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif"
 // shortcut: the image follows the system theme, not the app's; pass the theme in if they differ.
-const STYLE = `.l,.s{fill:#87867f;font:12px ${FONT}}.v{fill:#1f1e1d;font:600 16px ${FONT}}.d{stroke:#1f1e1d;stroke-opacity:.12}.t{fill:#1f1e1d;fill-opacity:.1}.success{fill:#2e7d32}.warning{fill:#a86400}.error{fill:#c62828}@media (prefers-color-scheme:dark){.v{fill:#ecebe6}.d{stroke:#fff;stroke-opacity:.14}.t{fill:#fff;fill-opacity:.12}.success{fill:#6abf69}.warning{fill:#e3a03d}.error{fill:#ef6a5a}}`
+const STYLE = `.l,.s{fill:#87867f;font:12px ${FONT}}.v{fill:#1f1e1d;font:600 16px ${FONT}}.d{stroke:#1f1e1d;stroke-opacity:.12}.t{fill:#1f1e1d;fill-opacity:.1}.big{fill:#1f1e1d;font:700 22px ${FONT}}.p{fill:#1f1e1d;font:600 12px ${FONT}}.success{fill:#2e7d32}.warning{fill:#a86400}.error{fill:#c62828}@media (prefers-color-scheme:dark){.p{fill:#ecebe6}.big{fill:#ecebe6}.v{fill:#ecebe6}.d{stroke:#fff;stroke-opacity:.14}.t{fill:#fff;fill-opacity:.12}.success{fill:#6abf69}.warning{fill:#e3a03d}.error{fill:#ef6a5a}}`
 
+type Gauge = { label: string; pct: number; tone: 'success' | 'warning' | 'error'; sub: string }
 type Col = { label: string; value: string; sub: string; tone?: 'success' | 'warning' | 'error'; bar?: number }
 
 // Real 1px dividers and exact columns; text glyphs break in the desktop's proportional font.
-const metricsSvg = (cols: Col[], width = 720) => {
-  const colW = width / cols.length
-  let body = `<line class="d" x1="0" y1="0.5" x2="${width}" y2="0.5"/>`
+const fit = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}…` : t)
+
+// The limit lines sit under the tiles on the same grid. A value past 100 fills the bar in red and says so, never clamping the number.
+const metricsSvg = (cols: Col[], width = 720, gauges: Gauge[] = []) => {
+  // Spacing: INSET beside the whole drawing, PAD above and below each block, COL beside each divider.
+  const INSET = 12
+  const PAD = 10
+  const COL = 14
+  const w = width - 2 * INSET
+  const label = PAD + 10 // text baselines inside a tile, 20 apart
+  const value = label + 20
+  const bar = value + 8
+  const sub = bar + 20
+  const TILES = sub + 3 + PAD // height of the tile block
+  const colW = w / cols.length
+  let body = `<line class="d" x1="0" y1="0.5" x2="${w}" y2="0.5"/>`
   cols.forEach((c, i) => {
-    const x = i * colW + (i === 0 ? 0 : 14)
+    const x = i * colW + (i === 0 ? 0 : COL)
     const tone = c.tone ? ` ${c.tone}` : ''
-    if (i > 0) body += `<line class="d" x1="${i * colW}" y1="14" x2="${i * colW}" y2="70"/>`
-    body += `<text class="l" x="${x}" y="24">${esc(c.label)}</text>`
-    body += `<text class="v${tone}" x="${x}" y="44">${esc(c.value)}</text>`
+    if (i > 0) body += `<line class="d" x1="${i * colW}" y1="${PAD - 4}" x2="${i * colW}" y2="${sub + 8}"/>`
+    body += `<text class="l" x="${x}" y="${label}">${esc(c.label)}</text>`
+    body += `<text class="v${tone}" x="${x}" y="${value}">${esc(c.value)}</text>`
     if (c.bar !== undefined) {
-      const w = colW - 32
-      body += `<rect class="t" x="${x}" y="51" width="${w}" height="4" rx="2"/><rect class="${c.tone ?? 'success'}" x="${x}" y="51" width="${Math.max(4, (w * Math.min(c.bar, 100)) / 100)}" height="4" rx="2"/>`
+      const bw = colW - 2 * COL
+      body += `<rect class="t" x="${x}" y="${bar}" width="${bw}" height="4" rx="2"/><rect class="${c.tone ?? 'success'}" x="${x}" y="${bar}" width="${Math.max(4, (bw * Math.min(c.bar, 100)) / 100)}" height="4" rx="2"/>`
     }
-    body += `<text class="s" x="${x}" y="71">${esc(c.sub)}</text>`
+    body += `<text class="s" x="${x}" y="${sub}">${esc(c.sub)}</text>`
   })
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="76" viewBox="0 0 ${width} 76"><style>${STYLE}</style>${body}</svg>`
+  if (gauges.length > 0) body += `<line class="d" x1="0" y1="${TILES + 0.5}" x2="${w}" y2="${TILES + 0.5}"/>`
+  // Two limits share a line, one in each half; the second half starts where the third tile's text does.
+  gauges.forEach((g, i) => {
+    const ox = (i % 2) * (w / 2) + (i % 2 ? COL : 0)
+    const y = TILES + PAD + 12 + Math.floor(i / 2) * 28 // text baseline
+    const bx = ox + 118
+    const gw = 90
+    body += `<text class="l" x="${ox}" y="${y}">${esc(g.label)}</text><text class="p ${g.tone}" x="${ox + 108}" y="${y}" text-anchor="end">${g.pct}%</text>`
+    // Same 4px bar as the memory tile.
+    body += `<rect class="t" x="${bx}" y="${y - 5}" width="${gw}" height="4" rx="2"/><rect class="${g.tone}" x="${bx}" y="${y - 5}" width="${Math.max(4, (gw * Math.min(g.pct, 100)) / 100)}" height="4" rx="2"/>`
+    body += `<text class="s" x="${bx + gw + 10}" y="${y}">${esc(fit(g.sub, 13))}</text>`
+  })
+  // Below the limit lines only 4: the band's own padding follows the image, so a full PAD reads as more than the PAD above.
+  const h = gauges.length > 0 ? TILES + PAD + 12 + (Math.ceil(gauges.length / 2) - 1) * 28 + 3 + 4 : TILES
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${h}" viewBox="0 0 ${width} ${h}"><style>${STYLE}</style><g transform="translate(${INSET},0)">${body}</g></svg>`
 }
 
 export const register: Register = on => {
@@ -139,6 +168,19 @@ export const register: Register = on => {
     const hint = c.ctxPct >= 80 ? '곧 가득 차요. 새 대화를 추천해요' : c.ctxPct >= 60 ? '슬슬 길어지고 있어요' : '아직 여유 있어요'
     const toggle = () => update($, isOpen, v => !v)
 
+    // Subscription windows (5-hour, weekly) as the status line has them; empty off a subscription, so the memory hint stays.
+    const rl = await $.session.usage().then(x => x.rateLimits, () => [])
+    const now = await $.clock.now()
+    const until = (iso?: string) => {
+      const m = iso ? Math.max(0, Math.round((Date.parse(iso) - now) / 6e4)) : -1
+      return m < 0 ? '' : m < 60 ? `${m}분` : m < 1440 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${Math.floor(m / 1440)}일 ${Math.floor((m % 1440) / 60)}시간`
+    }
+    const NAME: Record<string, string> = { five_hour: '5시간', seven_day: '주간', spend_limit: '지출' }
+    const worst = Math.max(0, ...rl.map(r => r.percentUsed))
+    const limitTone = worst >= 100 ? 'error' : worst >= 80 ? 'warning' : 'success'
+    // A chip never shrinks, so a narrow row wraps between chips instead of inside one.
+    const chip = (key: string, node: unknown) => <Box key={key} flexShrink={0}>{node}</Box>
+
     // Save a handoff note, /clear, then resume from it; the turn.complete hook above carries it from step to step.
     const f = await read($, flow)
     const set = (step: Flow['step']) => update($, flow, () => ({ step }))
@@ -169,18 +211,21 @@ export const register: Register = on => {
         </Box>
       )
 
-    const draw = (cols: Col[]) =>
+    const draw = (cols: Col[], gauges: Gauge[] = []) =>
       e.surface === 'desktop' ? (
-        (() => { const { Svg } = $.ui.resolve(e); return <Svg source={metricsSvg(cols)} alt={cols.map(k => `${k.label} ${k.value}`).join(', ')} /> })()
+        (() => { const { Svg } = $.ui.resolve(e); return <Svg source={metricsSvg(cols, 720, gauges)} alt={[...cols.map(k => `${k.label} ${k.value}`), ...gauges.map(g => `${g.label} ${g.pct}%`)].join(', ')} /> })()
       ) : (
-        <Box gap={2}>
-          {cols.map(k => (
-            <Box key={k.label} flexDirection="column" flexGrow={1}>
-              <Text dimColor>{k.label}</Text>
-              <Text bold color={k.tone}>{k.value}</Text>
-              <Text dimColor>{k.sub}</Text>
-            </Box>
-          ))}
+        <Box flexDirection="column">
+          <Box gap={2}>
+            {cols.map(k => (
+              <Box key={k.label} flexDirection="column" flexGrow={1}>
+                <Text dimColor>{k.label}</Text>
+                <Text bold color={k.tone}>{k.value}</Text>
+                <Text dimColor>{k.sub}</Text>
+              </Box>
+            ))}
+          </Box>
+          {gauges.map(g => <Text key={g.label} color={g.tone}>{`${g.label} ${'▰'.repeat(Math.round(Math.min(g.pct, 100) / 10))}${'▱'.repeat(10 - Math.round(Math.min(g.pct, 100) / 10))} ${g.pct}% · ${g.sub}`}</Text>)}
         </Box>
       )
 
@@ -192,45 +237,64 @@ export const register: Register = on => {
         .catch(() => $.command.run({ command: 'usage-review', args: period }))
         .catch(() => $.ui.toast('usage-review 스킬을 실행하지 못했어요'))
     }
-    const usageButtons = (
-      <Box gap={1}>
-        <Button key="day" plain label="일일 평가" onPress={() => review('day')} />
-        <Button key="week" plain label="주간 평가" onPress={() => review('week')} />
-        <Button key="month" plain label="월간 평가" onPress={() => review('month')} />
+    // One "평가" button; pressing it opens the day / week / month choice, and choosing one runs the review.
+    const menuOpen = await read($, evalMenu)
+    const pickReview = (period: 'day' | 'week' | 'month') => {
+      void update($, evalMenu, () => false)
+      review(period)
+    }
+    const usageButtons = menuOpen ? (
+      <Box gap={1} alignItems="center">
+        <Text dimColor>평가:</Text>
+        <Button key="day" plain label="일일" onPress={() => pickReview('day')} />
+        <Button key="week" plain label="주간" onPress={() => pickReview('week')} />
+        <Button key="month" plain label="월간" onPress={() => pickReview('month')} />
+        <Button key="cancel" plain dimColor label="취소" onPress={() => update($, evalMenu, () => false)} />
       </Box>
+    ) : (
+      <Button key="eval" plain label="평가" onPress={() => update($, evalMenu, () => true)} />
     )
 
     if (!open) {
       return (
-        <Box alignItems="center" gap={2}>
-          <Text bold>{`$${c.spent.toFixed(2)}`}</Text>
-          <Text dimColor>{`방금 $${c.last.toFixed(2)}`}</Text>
-          <Text color={tone}>{`기억 ${c.ctxPct}% 사용 · ${left}`}</Text>
-          <Text dimColor>{elapsed(c.busyMs)}</Text>
+        <Box flexWrap="wrap" alignItems="center" columnGap={2}>
+          {chip('cost', <Text bold>{`$${c.spent.toFixed(2)}`}</Text>)}
+          {chip('last', <Text dimColor>{`방금 $${c.last.toFixed(2)}`}</Text>)}
+          {chip('mem', <Text color={tone}>{`기억 ${c.ctxPct}% 사용 · ${left}`}</Text>)}
+          {chip('time', <Text dimColor>{elapsed(c.busyMs)}</Text>)}
+          {rl.length > 0 && chip('limit', <Text color={limitTone}>{rl.map(r => `${NAME[r.kind] ?? r.kind} ${r.percentUsed}%`).join(' · ')}</Text>)}
           <Box flexGrow={1} />
-          {/* Only a handoff in progress shows here; the buttons live in the opened view so this row never wraps. */}
-          {f.step !== 'idle' && handoff}
-          <Button key="toggle" plain label="자세히" onPress={toggle} />
+          {/* Only a handoff in progress shows here; the buttons live in the opened view. */}
+          {f.step !== 'idle' && chip('handoff', handoff)}
+          {chip('toggle', <Button key="toggle" plain label="자세히" onPress={toggle} />)}
         </Box>
       )
     }
 
+    const lvl = (n: number): Gauge['tone'] => (n >= 100 ? 'error' : n >= 80 ? 'warning' : 'success')
+    const gauges: Gauge[] = [
+      ...rl.map(r => ({
+        label: `${NAME[r.kind] ?? r.kind} 한도`,
+        pct: r.percentUsed,
+        tone: lvl(r.percentUsed),
+        sub: `${r.percentUsed >= 100 ? '초과 · ' : ''}${r.resetsAt ? `${until(r.resetsAt)} 후 초기화` : r.percentUsed >= 100 ? '한도를 넘었어요' : ''}`,
+      })),
+    ]
     const cols: Col[] = [
       { label: '이번 대화 비용', value: `$${c.spent.toFixed(2)}`, sub: `방금 $${c.last.toFixed(2)} · 평균 $${per(c.spent).toFixed(2)}` },
       { label: '대화 기억 공간', value: `${c.ctxPct}% 사용`, sub: `${fmtTokens(c.ctx)} 사용 · ${left || hint}`, tone, bar: c.ctxPct },
       { label: '대화 진행', value: `${c.turns}번 · ${elapsed(c.busyMs)}`, sub: `1번 평균 ${elapsed(per(c.busyMs))}` },
       { label: '토큰 사용량', value: fmtTokens(readTok + output), sub: `읽음 ${fmtTokens(readTok)} · 씀 ${fmtTokens(output)}` },
     ]
+    // Buttons on one line at the right edge; the tiles and limit lines below share one grid.
     return (
       <Box flexDirection="column" gap={e.surface === 'desktop' ? 1 : 0}>
-        <Box alignItems="center">
-          <Text color={tone}>{hint}</Text>
-          <Box flexGrow={1} />
-          {usageButtons}
-          {handoff}
-          <Button key="toggle" plain label="접기" onPress={toggle} />
+        <Box alignItems="center" justifyContent="flex-end" columnGap={2}>
+          {chip('usage', usageButtons)}
+          {chip('handoff', handoff)}
+          {chip('toggle', <Button key="toggle" plain label="접기" onPress={toggle} />)}
         </Box>
-        {draw(cols)}
+        {draw(cols, gauges)}
       </Box>
     )
   })
