@@ -86,7 +86,6 @@ const metricsSvg = (cols: Col[], width = 720, gauges: Gauge[] = []) => {
 }
 
 export const register: Register = on => {
-  let before = 0 // session cost at the end of the previous turn
   let started = false // a handoff prompt of ours has been submitted, so the next main turn.complete is its answer
 
   // Marks our own prompts; a turn that was already running when the button was pressed must not advance the flow.
@@ -100,9 +99,11 @@ export const register: Register = on => {
     const isMain = e.agentId === undefined
     const usage = isMain ? await $.session.usage() : undefined
     const spent = usage?.cost?.usd ?? 0
+    // The baseline is the cost the band stored after the previous turn, not a variable: a hot reload empties variables,
+    // and the first turn after one would then count the whole session's cost as its own.
     // A total below the baseline means the engine restarted its ledger (/clear).
+    const before = (await read($, cost))?.spent ?? 0
     const last = !isMain ? 0 : spent >= before ? spent - before : spent
-    if (isMain) before = spent
     const turns = isMain ? await $.session.turns() : 0
 
     const c = await update($, cost, (c): Cost => {

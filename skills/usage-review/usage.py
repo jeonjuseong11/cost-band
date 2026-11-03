@@ -65,9 +65,16 @@ for sid, ts, text in prompts:
 cost = defaultdict(float)  # exact dollars, only for days the cost-band mod was running
 csv_path = f'{home}/cost-band-turns.csv'
 if os.path.exists(csv_path):
-    for r in csv.DictReader(open(csv_path)):
-        if not r['agent']:
-            cost[day(r['time'])] += float(r['turn_cost_usd'] or 0)
+    # The running total per session is the reliable column; a turn's cost is the step between two totals
+    # (a drop means /clear restarted the ledger). The logged per-turn column was inflated by reloads of old versions.
+    prev = {}
+    for r in sorted(csv.DictReader(open(csv_path)), key=lambda r: r['time']):
+        if r['agent']:
+            continue
+        total = float(r['total_cost_usd'] or 0)
+        before = prev.get(r['session'], 0)
+        cost[day(r['time'])] += total - before if total >= before else total
+        prev[r['session']] = total
 
 today = datetime.now().astimezone().date()
 def period(span, offset):
