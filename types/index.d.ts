@@ -1,5 +1,5 @@
 export type Tok = { input: number; output: number; cacheRead: number; cacheWrite: number }
-export type Flow = { step: 'idle' | 'confirm' | 'saving' | 'resuming' | 'done' | 'failed'; msg?: string }
+export type Flow = { step: 'idle' | 'confirm' | 'saving' | 'resuming' | 'done' | 'failed'; msg?: string; file?: string }
 export type Cost = {
   spent: number
   last: number
