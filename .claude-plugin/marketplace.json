@@ -1,0 +1,11 @@
+{
+  "name": "cost-band",
+  "owner": { "name": "jeonjuseong11" },
+  "plugins": [
+    {
+      "name": "cost-band",
+      "source": "./",
+      "description": "Session cost and context band above the prompt, one-click handoff, and a daily/weekly/monthly review of how well you use AI"
+    }
+  ]
+}
