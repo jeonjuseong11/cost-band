@@ -131,9 +131,8 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const open = await read($, isOpen)
     const per = (n: number) => (c.turns > 0 ? n / c.turns : 0)
-    const { input, cacheRead, cacheWrite } = c.tok
-    const inAll = input + cacheRead + cacheWrite
-    const hit = inAll > 0 ? Math.round((cacheRead / inAll) * 100) : 0
+    const { input, output, cacheRead, cacheWrite } = c.tok
+    const readTok = input + cacheRead + cacheWrite // everything the AI read this session, reused or new
     const tone = c.ctxPct >= 80 ? 'error' : c.ctxPct >= 60 ? 'warning' : 'success'
     const total = c.ctxPct > 0 ? Math.round(c.ctx / (c.ctxPct / 100)) : 0
     const left = total > 0 ? `${fmtTokens(Math.max(total - c.ctx, 0))} 남음` : ''
@@ -209,8 +208,8 @@ export const register: Register = on => {
           <Text color={tone}>{`기억 ${c.ctxPct}% 사용 · ${left}`}</Text>
           <Text dimColor>{elapsed(c.busyMs)}</Text>
           <Box flexGrow={1} />
-          {usageButtons}
-          {handoff}
+          {/* Only a handoff in progress shows here; the buttons live in the opened view so this row never wraps. */}
+          {f.step !== 'idle' && handoff}
           <Button key="toggle" plain label="자세히" onPress={toggle} />
         </Box>
       )
@@ -219,8 +218,8 @@ export const register: Register = on => {
     const cols: Col[] = [
       { label: '이번 대화 비용', value: `$${c.spent.toFixed(2)}`, sub: `방금 $${c.last.toFixed(2)} · 평균 $${per(c.spent).toFixed(2)}` },
       { label: '대화 기억 공간', value: `${c.ctxPct}% 사용`, sub: `${fmtTokens(c.ctx)} 사용 · ${left || hint}`, tone, bar: c.ctxPct },
-      { label: '주고받은 횟수', value: `${c.turns}번`, sub: `1번 평균 ${elapsed(per(c.busyMs))}` },
-      { label: 'AI가 일한 시간', value: elapsed(c.busyMs), sub: '' },
+      { label: '대화 진행', value: `${c.turns}번 · ${elapsed(c.busyMs)}`, sub: `1번 평균 ${elapsed(per(c.busyMs))}` },
+      { label: '토큰 사용량', value: fmtTokens(readTok + output), sub: `읽음 ${fmtTokens(readTok)} · 씀 ${fmtTokens(output)}` },
     ]
     return (
       <Box flexDirection="column" gap={e.surface === 'desktop' ? 1 : 0}>

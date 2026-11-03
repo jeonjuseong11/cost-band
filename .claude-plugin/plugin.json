@@ -1,6 +1,6 @@
 {
   "name": "cost-band",
-  "version": "1.0.0",
+  "version": "1.1.2",
   "description": "Shows session cost and context above the prompt, a one-click handoff, and a daily/weekly/monthly review of how well you use AI",
   "types": "./types/index.d.ts"
 }
